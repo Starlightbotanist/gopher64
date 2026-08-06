@@ -12,11 +12,16 @@ use std::os::fd::FromRawFd;
 const REQUEST_SELECT_ROM: jint = 1;
 const CONFIGURE_INPUT_PROFILE: jint = 2;
 const RUN_ROM: jint = 3;
+const REQUEST_SELECT_GPU_DRIVER: jint = 4;
 
 pub static ANDROID_APP: std::sync::Mutex<Option<slint::android::AndroidApp>> =
     std::sync::Mutex::new(None);
 
 pub static SELECT_ROM_TX: tokio::sync::Mutex<
+    Option<tokio::sync::oneshot::Sender<Option<std::path::PathBuf>>>,
+> = tokio::sync::Mutex::const_new(None);
+
+static SELECT_GPU_DRIVER_TX: tokio::sync::Mutex<
     Option<tokio::sync::oneshot::Sender<Option<std::path::PathBuf>>>,
 > = tokio::sync::Mutex::const_new(None);
 
@@ -478,6 +483,47 @@ pub async fn select_gb_ram(_player: i32) -> Option<std::path::PathBuf> {
     select_rom(slint::SharedString::new()).await
 }
 
+pub async fn select_gpu_driver() -> Option<std::path::PathBuf> {
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    *SELECT_GPU_DRIVER_TX.lock().await = Some(tx);
+
+    let picker_result = ANDROID_APP
+        .lock()
+        .map_err(|_| "Android app mutex is poisoned".to_string())
+        .and_then(|app| {
+            let app = app
+                .as_ref()
+                .ok_or_else(|| "Android app not initialized".to_string())?;
+            get_vm(app)
+                .attach_current_thread(|env| select_gpu_driver_on_jvm(env, app))
+                .map_err(|error| format!("JNI error while selecting a GPU driver: {error:?}"))
+        });
+
+    if let Err(error) = picker_result {
+        eprintln!("{error}");
+        SELECT_GPU_DRIVER_TX.lock().await.take();
+        return None;
+    }
+
+    rx.await.unwrap_or(None)
+}
+
+fn select_gpu_driver_on_jvm(
+    env: &mut Env<'_>,
+    app: &slint::android::AndroidApp,
+) -> jni::errors::Result<()> {
+    let raw_activity_global = app.activity_as_ptr() as jni::sys::jobject;
+    let activity = unsafe { env.as_cast_raw::<Global<AndroidActivity>>(&raw_activity_global)? };
+    let action = AndroidIntent::ACTION_OPEN_DOCUMENT(env)?;
+    let category = AndroidIntent::CATEGORY_OPENABLE(env)?;
+    let mime_type = JString::from_str(env, "application/zip")?;
+    let intent = AndroidIntent::with_action(env, &action)?
+        .set_type(env, &mime_type)?
+        .add_category(env, &category)?;
+    activity.start_activity_for_result(env, &intent, REQUEST_SELECT_GPU_DRIVER)?;
+    Ok(())
+}
+
 fn select_rom_on_jvm(
     env: &mut Env<'_>,
     app: &slint::android::AndroidApp,
@@ -589,80 +635,98 @@ pub extern "system" fn Java_io_github_gopher64_gopher64_SlintActivity_nativeOnAc
     intent_data: JObject<'caller>,
 ) {
     let outcome = unowned_env.with_env(|env| -> Result<_, jni::errors::Error> {
-        if result_code == AndroidActivity::RESULT_OK(env)? {
-            match request_code {
-                REQUEST_SELECT_ROM => {
-                    if let Some(tx) = SELECT_ROM_TX.blocking_lock().take()
-                        && !intent_data.is_null()
-                    {
-                        let result_intent =
-                            unsafe { env.as_cast_raw::<AndroidIntent>(&intent_data)? };
-
-                        let uri = result_intent.as_ref().get_data(env)?;
-                        if uri.is_null() {
-                            return Ok(());
-                        }
-
-                        if let Ok(app) = ANDROID_APP.lock()
-                            && let Some(app) = app.as_ref()
-                        {
-                            let raw_activity_global = app.activity_as_ptr() as jni::sys::jobject;
-                            let activity = unsafe {
-                                env.as_cast_raw::<Global<AndroidActivity>>(&raw_activity_global)?
-                            };
-
-                            let content_resolver = activity.as_ref().get_content_resolver(env)?;
-                            let take_flags = AndroidIntent::FLAG_GRANT_READ_URI_PERMISSION(env)?;
-                            content_resolver
-                                .take_persistable_uri_permission(env, &uri, take_flags)?;
-
-                            let path = uri.to_string(env)?;
-
-                            let _ = tx.send(Some(std::path::PathBuf::from(path.to_string())));
-                        } else {
-                            eprintln!("Android app not initialized");
-                            return Ok(());
-                        }
-                    }
-                }
-                CONFIGURE_INPUT_PROFILE => {
-                    if let Ok(weak_app_window) = WEAK_SLINT_WINDOW.lock()
-                        && let Some(weak_app_window) = weak_app_window.as_ref()
-                    {
-                        let config = ui::config::Config::new();
-                        ui::gui::update_input_profiles(&weak_app_window, &config);
-                    }
-                }
-                RUN_ROM => {
+        if result_code != AndroidActivity::RESULT_OK(env)? {
+            if request_code == REQUEST_SELECT_GPU_DRIVER
+                && let Some(tx) = SELECT_GPU_DRIVER_TX.blocking_lock().take()
+            {
+                let _ = tx.send(None);
+            }
+            return Ok(());
+        }
+        match request_code {
+            REQUEST_SELECT_ROM => {
+                if let Some(tx) = SELECT_ROM_TX.blocking_lock().take()
+                    && !intent_data.is_null()
+                {
                     let result_intent = unsafe { env.as_cast_raw::<AndroidIntent>(&intent_data)? };
 
-                    let file_path_key = JString::from_str(env, "file_path")?;
-                    let file_path = result_intent
-                        .as_ref()
-                        .get_string_extra(env, &file_path_key)?
-                        .try_to_string(env)?;
-
-                    let cheats_path_key = JString::from_str(env, "cheats_path")?;
-                    if let Ok(cheats_path) = result_intent
-                        .as_ref()
-                        .get_string_extra(env, &cheats_path_key)
-                        && let Ok(cheats_path) = cheats_path.try_to_string(env)
-                    {
-                        let _ = std::fs::remove_file(cheats_path);
+                    let uri = result_intent.as_ref().get_data(env)?;
+                    if uri.is_null() {
+                        return Ok(());
                     }
-                    if let Ok(weak_app_window) = WEAK_SLINT_WINDOW.lock()
-                        && let Some(weak_app_window) = weak_app_window.as_ref()
+
+                    if let Ok(app) = ANDROID_APP.lock()
+                        && let Some(app) = app.as_ref()
                     {
-                        weak_app_window
-                            .upgrade_in_event_loop(move |handle| {
-                                ui::gui::update_recent_roms(&handle, file_path.into());
-                                handle.set_game_running(false)
-                            })
-                            .unwrap();
+                        let raw_activity_global = app.activity_as_ptr() as jni::sys::jobject;
+                        let activity = unsafe {
+                            env.as_cast_raw::<Global<AndroidActivity>>(&raw_activity_global)?
+                        };
+
+                        let content_resolver = activity.as_ref().get_content_resolver(env)?;
+                        let take_flags = AndroidIntent::FLAG_GRANT_READ_URI_PERMISSION(env)?;
+                        content_resolver.take_persistable_uri_permission(env, &uri, take_flags)?;
+
+                        let path = uri.to_string(env)?;
+
+                        let _ = tx.send(Some(std::path::PathBuf::from(path.to_string())));
+                    } else {
+                        eprintln!("Android app not initialized");
+                        return Ok(());
                     }
                 }
-                _ => {}
             }
+            CONFIGURE_INPUT_PROFILE => {
+                if let Ok(weak_app_window) = WEAK_SLINT_WINDOW.lock()
+                    && let Some(weak_app_window) = weak_app_window.as_ref()
+                {
+                    let config = ui::config::Config::new();
+                    ui::gui::update_input_profiles(&weak_app_window, &config);
+                }
+            }
+            RUN_ROM => {
+                let result_intent = unsafe { env.as_cast_raw::<AndroidIntent>(&intent_data)? };
+
+                let file_path_key = JString::from_str(env, "file_path")?;
+                let file_path = result_intent
+                    .as_ref()
+                    .get_string_extra(env, &file_path_key)?
+                    .try_to_string(env)?;
+
+                let cheats_path_key = JString::from_str(env, "cheats_path")?;
+                if let Ok(cheats_path) = result_intent
+                    .as_ref()
+                    .get_string_extra(env, &cheats_path_key)
+                    && let Ok(cheats_path) = cheats_path.try_to_string(env)
+                {
+                    let _ = std::fs::remove_file(cheats_path);
+                }
+                if let Ok(weak_app_window) = WEAK_SLINT_WINDOW.lock()
+                    && let Some(weak_app_window) = weak_app_window.as_ref()
+                {
+                    weak_app_window
+                        .upgrade_in_event_loop(move |handle| {
+                            ui::gui::update_recent_roms(&handle, file_path.into());
+                            handle.set_game_running(false)
+                        })
+                        .unwrap();
+                }
+            }
+            REQUEST_SELECT_GPU_DRIVER => {
+                if let Some(tx) = SELECT_GPU_DRIVER_TX.blocking_lock().take()
+                    && !intent_data.is_null()
+                {
+                    let result_intent = unsafe { env.as_cast_raw::<AndroidIntent>(&intent_data)? };
+                    let uri = result_intent.as_ref().get_data(env)?;
+                    if !uri.is_null() {
+                        let path = uri.to_string(env)?;
+                        let _ = tx.send(Some(std::path::PathBuf::from(path.to_string())));
+                    } else {
+                        let _ = tx.send(None);
+                    }
+                }
+            }
+            _ => {}
         }
         Ok(())
     });

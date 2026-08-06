@@ -36,6 +36,12 @@ android {
             abiFilters.addAll(listOf("arm64-v8a", "x86_64"))
         }
 
+        externalNativeBuild {
+            cmake {
+                arguments.add("-DANDROID_STL=c++_shared")
+            }
+        }
+
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
@@ -66,7 +72,16 @@ android {
 
     packaging {
         jniLibs {
+            useLegacyPackaging = true
             excludes.add("lib/**/libsevenz_rust2*.so")
+            pickFirsts.add("lib/**/libc++_shared.so")
+        }
+    }
+
+    externalNativeBuild {
+        cmake {
+            path = file("src/main/cpp/CMakeLists.txt")
+            version = "3.31.6"
         }
     }
 }

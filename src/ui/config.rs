@@ -56,6 +56,8 @@ pub struct Video {
     pub widescreen: bool,
     pub vsync: bool,
     pub crt: bool,
+    #[serde(default)]
+    pub custom_driver: String,
 }
 
 #[derive(Default, serde::Serialize, serde::Deserialize)]
@@ -190,6 +192,7 @@ impl Config {
                 widescreen: false,
                 vsync: true,
                 crt: false,
+                custom_driver: String::new(),
             },
             emulation: Emulation {
                 overclock: false,

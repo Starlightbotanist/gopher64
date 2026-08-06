@@ -62,6 +62,9 @@ export component AppWindow inherits Window {
     callback ra_show_profile_clicked;
     callback ra_toggled(bool, bool, bool, bool, bool);
     callback controller_window_created;
+    callback custom_driver_selected(int);
+    callback install_custom_driver_clicked;
+    callback remove_custom_driver_clicked;
     in property version <=> AboutData.version;
     in property has_update <=> AboutData.has_update;
     in-out property ra_username <=> RAData.ra_username;
@@ -90,6 +93,12 @@ export component AppWindow inherits Window {
     in-out property rewind <=> SettingsData.rewind;
     in-out property emulate_vru <=> SettingsData.emulate_vru;
     in-out property rom_dir <=> SettingsData.rom_dir;
+    in-out property custom_driver_supported <=> SettingsData.custom_driver_supported;
+    in-out property custom_driver_names <=> SettingsData.custom_driver_names;
+    in-out property custom_driver_ids <=> SettingsData.custom_driver_ids;
+    in-out property custom_driver_index <=> SettingsData.custom_driver_index;
+    in-out property custom_driver_details <=> SettingsData.custom_driver_details;
+    in-out property custom_driver_status <=> SettingsData.custom_driver_status;
     in-out property controller_enabled <=> ControllerData.controller_enabled;
     in-out property controller_changed <=> ControllerData.controller_changed;
     in-out property transferpak <=> ControllerData.transferpak;
@@ -340,6 +349,15 @@ export component AppWindow inherits Window {
         if(side-bar.current-item == 5): Settings {
             width: 100%;
             height: 100%;
+            custom_driver_selected(index) => {
+                root.custom_driver_selected(index);
+            }
+            install_custom_driver_clicked => {
+                root.install_custom_driver_clicked();
+            }
+            remove_custom_driver_clicked => {
+                root.remove_custom_driver_clicked();
+            }
         }
         if(side-bar.current-item == 6): About {
             width: 100%;

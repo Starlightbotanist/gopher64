@@ -4,6 +4,7 @@
 import {
     GroupBox,
     ComboBox,
+    Button,
     HorizontalBox,
     VerticalBox,
     Switch,
@@ -25,10 +26,19 @@ export global SettingsData {
     in-out property <bool> rewind;
     in-out property <bool> emulate_vru;
     in-out property <string> rom_dir;
+    in-out property <bool> custom_driver_supported;
+    in-out property <[string]> custom_driver_names;
+    in-out property <[string]> custom_driver_ids;
+    in-out property <int> custom_driver_index;
+    in-out property <string> custom_driver_details;
+    in-out property <string> custom_driver_status;
 }
 
 export component Settings inherits Page {
     title: @tr("Settings");
+    callback custom_driver_selected(int);
+    callback install_custom_driver_clicked;
+    callback remove_custom_driver_clicked;
 
     HorizontalBox {
         alignment: center;
@@ -171,6 +181,46 @@ export component Settings inherits Page {
                     Rectangle {
                         height: 40px; // so the combobox isn't cut off
                     }
+                }
+            }
+
+            if SettingsData.custom_driver_supported: GroupBox {
+                title: @tr("Custom GPU Driver");
+                VerticalBox {
+                    alignment: start;
+                    Text {
+                        text: @tr("Replace the system Vulkan driver with a compatible Adreno driver package.");
+                        wrap: word-wrap;
+                    }
+                    ComboBox {
+                        model: SettingsData.custom_driver_names;
+                        current-index: SettingsData.custom_driver_index;
+                        selected => {
+                            SettingsData.custom_driver_index = self.current-index;
+                            root.custom_driver_selected(self.current-index);
+                        }
+                    }
+                    Text {
+                        text: SettingsData.custom_driver_details;
+                        wrap: word-wrap;
+                    }
+                    HorizontalBox {
+                        alignment: start;
+                        Button {
+                            text: @tr("Install Driver ZIP");
+                            clicked => { root.install_custom_driver_clicked(); }
+                        }
+                        Button {
+                            text: @tr("Remove Selected Driver");
+                            enabled: SettingsData.custom_driver_index > 0;
+                            clicked => { root.remove_custom_driver_clicked(); }
+                        }
+                    }
+                    if SettingsData.custom_driver_status != "": Text {
+                        text: SettingsData.custom_driver_status;
+                        wrap: word-wrap;
+                    }
+                    Rectangle { height: 20px; }
                 }
             }
         }

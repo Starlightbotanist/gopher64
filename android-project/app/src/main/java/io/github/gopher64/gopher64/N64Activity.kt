@@ -31,7 +31,10 @@ class N64Activity : SDLActivity() {
 
     override fun getArguments(): Array<String> {
         val intent = intent ?: return super.getArguments()
-        val args = intent.getStringArrayExtra("args") ?: return super.getArguments()
+        val args = intent.getStringArrayExtra("args")?.toMutableList()
+            ?: return super.getArguments()
+        args.add("--native-library-dir")
+        args.add(applicationInfo.nativeLibraryDir)
 
         val dataIntent = Intent()
         val file_path = intent.getStringExtra("file_path")
@@ -43,6 +46,6 @@ class N64Activity : SDLActivity() {
             dataIntent.putExtra("cheats_path", cheats_path)
         }
         setResult(RESULT_OK, dataIntent)
-        return args
+        return args.toTypedArray()
     }
 }

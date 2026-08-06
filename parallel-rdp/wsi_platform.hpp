@@ -15,8 +15,10 @@ public:
   void poll_input() override;
   void poll_input_async(Granite::InputTrackerHandler *handler) override;
   void set_window(SDL_Window *_window);
+  void set_vk_get_instance_proc_addr(PFN_vkGetInstanceProcAddr proc_addr);
   void do_resize();
 
 private:
   SDL_Window *window;
+  PFN_vkGetInstanceProcAddr vk_get_instance_proc_addr = nullptr;
 };

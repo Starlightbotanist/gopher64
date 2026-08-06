@@ -101,6 +101,11 @@ pub fn init(device: &mut device::Device, netplay: bool) {
 
     let gfx_info = build_gfx_info(device, netplay);
 
+    #[cfg(target_os = "android")]
+    let vk_get_instance_proc_addr = crate::custom_driver::vk_get_instance_proc_addr();
+    #[cfg(not(target_os = "android"))]
+    let vk_get_instance_proc_addr = std::ptr::null_mut();
+
     unsafe {
         let font_bytes = include_bytes!("../../data/ui/RobotoMono-Regular.ttf");
         rdp_init(
@@ -109,6 +114,7 @@ pub fn init(device: &mut device::Device, netplay: bool) {
             font_bytes.as_ptr() as *const std::ffi::c_void,
             font_bytes.len(),
             device.ui.storage.save_state_slot,
+            vk_get_instance_proc_addr,
         )
     }
 

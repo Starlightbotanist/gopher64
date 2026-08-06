@@ -4,6 +4,8 @@ pub mod audio;
 #[cfg(feature = "gui")]
 pub mod cheats;
 pub mod config;
+#[cfg(target_os = "android")]
+pub mod custom_driver;
 #[cfg(feature = "gui")]
 pub mod gui;
 pub mod input;

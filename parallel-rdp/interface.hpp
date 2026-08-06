@@ -53,7 +53,8 @@ typedef enum {
 } MESSAGE_LENGTH;
 
 void rdp_init(void *_window, GFX_INFO _gfx_info, const void *font,
-              size_t font_size, uint32_t save_state_slot);
+              size_t font_size, uint32_t save_state_slot,
+              void *vk_get_instance_proc_addr);
 void rdp_close();
 void rdp_set_vi_register(uint32_t reg, uint32_t value);
 void rdp_update_screen();

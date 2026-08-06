@@ -375,7 +375,8 @@ static ImageHandle create_message_image(Vulkan::Device &device, int width,
 }
 
 void rdp_init(void *_window, GFX_INFO _gfx_info, const void *font,
-              size_t font_size, uint32_t save_state_slot) {
+              size_t font_size, uint32_t save_state_slot,
+              void *vk_get_instance_proc_addr) {
   memset(&rdp_device, 0, sizeof(RDP_DEVICE));
   memset(&callback, 0, sizeof(CALL_BACK));
 
@@ -400,6 +401,8 @@ void rdp_init(void *_window, GFX_INFO _gfx_info, const void *font,
   wsi = new WSI;
   wsi_platform = new SDL_WSIPlatform;
   wsi_platform->set_window(window);
+  wsi_platform->set_vk_get_instance_proc_addr(
+      reinterpret_cast<PFN_vkGetInstanceProcAddr>(vk_get_instance_proc_addr));
   wsi->set_platform(wsi_platform);
   if (gfx_info.vsync) {
     // VK_PRESENT_MODE_MAILBOX_KHR, fallback to VK_PRESENT_MODE_FIFO_KHR
@@ -410,8 +413,12 @@ void rdp_init(void *_window, GFX_INFO _gfx_info, const void *font,
   }
   wsi->set_backbuffer_srgb(false);
   Context::SystemHandles handles = {};
-  if (!::Vulkan::Context::init_loader(
-          (PFN_vkGetInstanceProcAddr)SDL_Vulkan_GetVkGetInstanceProcAddr())) {
+  PFN_vkGetInstanceProcAddr get_instance_proc_addr =
+      vk_get_instance_proc_addr
+          ? reinterpret_cast<PFN_vkGetInstanceProcAddr>(vk_get_instance_proc_addr)
+          : reinterpret_cast<PFN_vkGetInstanceProcAddr>(
+                SDL_Vulkan_GetVkGetInstanceProcAddr());
+  if (!::Vulkan::Context::init_loader(get_instance_proc_addr)) {
     rdp_close();
     return;
   }
@@ -600,6 +607,12 @@ static void render_frame(Vulkan::Device &device) {
       options.crop_rect.bottom = 30;
     }
   }
+
+#ifdef __ANDROID__
+  // Submit pending RDP commands before scanout. Without this flush, some
+  // Android Vulkan drivers can sample the VI image before its compute work.
+  processor->flush();
+#endif
 
   Vulkan::ImageHandle image = processor->scanout(options);
 

@@ -135,6 +135,9 @@ fn main() {
             .set_icon("data/icon/icon.ico")
             .compile()
             .unwrap();
+    } else if os == "android" {
+        volk_build.flag("-DVK_USE_PLATFORM_ANDROID_KHR");
+        rdp_build.flag("-DVK_USE_PLATFORM_ANDROID_KHR");
     } else if os == "macos" {
         let output = std::process::Command::new("clang")
             .args(["--print-runtime-dir"])

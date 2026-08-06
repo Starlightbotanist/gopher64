@@ -186,6 +186,8 @@ fn settings_window(app: &AppWindow, config: &ui::config::Config) {
     app.set_disable_expansion_pak(config.emulation.disable_expansion_pak);
     app.set_emulate_usb(config.emulation.usb);
     app.set_rewind(config.emulation.rewind);
+    #[cfg(target_os = "android")]
+    ui::custom_driver::init(app, config);
     let combobox_value = match config.video.upscale {
         1 => 0,
         2 => 1,
@@ -454,6 +456,15 @@ pub fn save_settings(app: &AppWindow) {
     config.video.widescreen = app.get_widescreen();
     config.video.vsync = app.get_vsync();
     config.video.crt = app.get_apply_crt_shader();
+    #[cfg(target_os = "android")]
+    {
+        let index = app.get_custom_driver_index() as usize;
+        config.video.custom_driver = app
+            .get_custom_driver_ids()
+            .row_data(index)
+            .unwrap_or_default()
+            .to_string();
+    }
     config.ui.theme = app.get_theme();
     config.emulation.overclock = app.get_overclock_n64_cpu();
     config.emulation.disable_expansion_pak = app.get_disable_expansion_pak();

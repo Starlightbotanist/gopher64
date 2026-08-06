@@ -1,6 +1,8 @@
 #![deny(warnings)]
 
 mod cheats;
+#[cfg(target_os = "android")]
+mod custom_driver;
 mod device;
 mod netplay;
 mod retroachievements;
@@ -79,6 +81,8 @@ pub struct Args {
         help = "Clear all input profile bindings and controller assignments"
     )]
     pub clear_input_bindings: bool,
+    #[arg(long, value_name = "PATH", hide = true)]
+    pub native_library_dir: Option<String>,
     #[arg(
         long,
         value_name = "SLOT",
@@ -162,6 +166,12 @@ pub fn run(args: Args, arg_count: usize) -> std::io::Result<()> {
         }
 
         let mut device = device::Device::new(true);
+
+        #[cfg(target_os = "android")]
+        custom_driver::load_selected(
+            &device.ui.config.video.custom_driver,
+            args.native_library_dir.as_deref(),
+        );
 
         device.ui.config.ui.recent_roms.retain(|x| *x != game);
         device.ui.config.ui.recent_roms.insert(0, game);
